@@ -1,0 +1,32 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "Pi Desktop",
+	"version": "0.1.0",
+	"identifier": "com.pi.desktop",
+	"build": {
+		"frontendDist": "../dist",
+		"devUrl": "http://localhost:1420",
+		"beforeDevCommand": "npm run dev",
+		"beforeBuildCommand": "npm run build"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "Pi Desktop",
+				"width": 1280,
+				"height": 800,
+				"minWidth": 800,
+				"minHeight": 600
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": "nsis",
+		"externalBin": ["binaries/pi"],
+		"resources": ["binaries/theme", "binaries/assets", "binaries/export-html", "binaries/docs", "binaries/examples", "binaries/native", "binaries/photon_rs_bg.wasm", "binaries/package.json", "binaries/README.md", "binaries/CHANGELOG.md"]
+	}
+}
