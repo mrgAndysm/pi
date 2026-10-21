@@ -5,7 +5,7 @@ import { InputBox } from "./components/InputBox";
 import { ModelPicker } from "./components/ModelPicker";
 import { ProjectSidebar, type Project } from "./components/ProjectSidebar";
 import * as rpc from "./rpc";
-import type { ChatMessage, ModelInfo, PiEvent, RpcSessionState, SessionStats, ToolCallItem } from "./types";
+import type { ChatMessage, MessageBadge, ModelInfo, PiEvent, RpcSessionState, SessionStats, ToolCallItem } from "./types";
 
 let msgSeq = 0;
 const nextId = () => `m_${++msgSeq}`;
@@ -40,29 +40,52 @@ function applyEvent(messages: ChatMessage[], ev: PiEvent): ChatMessage[] {
 			if (cur) next[next.indexOf(cur)] = { ...cur, streaming: false };
 			break;
 		}
-		case "toolcall_start": {
-			const cur = lastAssistant();
-			if (!cur) break;
+		// 工具执行生命周期：RPC 转发的是 agent 的 tool_execution_* 事件
+		case "tool_execution_start": {
+			// 没有 assistant 气泡时（例如历史被清空）补一个，保证动作可见
+			let cur = lastAssistant();
+			if (!cur) {
+				cur = { id: nextId(), role: "assistant", text: "", toolCalls: [], streaming: true };
+				next.push(cur);
+			}
 			const tool: ToolCallItem = {
-				id: String(ev.id ?? nextId()),
+				id: String(ev.toolCallId ?? nextId()),
 				toolName: String(ev.toolName ?? "tool"),
-				args: (ev as Record<string, unknown>).args,
+				args: ev.args,
 				done: false,
 			};
 			next[next.indexOf(cur)] = { ...cur, toolCalls: [...cur.toolCalls, tool] };
 			break;
 		}
-		case "toolcall_end": {
+		case "tool_execution_update": {
+			// 流式部分结果（如 bash 增量输出），只做预览，结束时由 end 事件覆盖
 			const cur = lastAssistant();
 			if (!cur) break;
-			const result = (ev as Record<string, unknown>).result;
-			const isError = Boolean((ev as Record<string, unknown>).isError);
-			const toolCalls = cur.toolCalls.map((t) =>
-				t.id === String(ev.id)
-					? { ...t, done: true, isError, result: typeof result === "string" ? result : JSON.stringify(result, null, 2) }
-					: t,
-			);
-			next[next.indexOf(cur)] = { ...cur, toolCalls };
+			const id = String(ev.toolCallId);
+			next[next.indexOf(cur)] = {
+				...cur,
+				toolCalls: cur.toolCalls.map((t) => (t.id === id ? { ...t, result: ev.partialResult } : t)),
+			};
+			break;
+		}
+		case "tool_execution_end": {
+			const cur = lastAssistant();
+			if (!cur) break;
+			const id = String(ev.toolCallId);
+			next[next.indexOf(cur)] = {
+				...cur,
+				toolCalls: cur.toolCalls.map((t) =>
+					t.id === id
+						? {
+								...t,
+								done: true,
+								isError: Boolean(ev.isError),
+								result: ev.result,
+								durationMs: typeof ev.durationMs === "number" ? ev.durationMs : undefined,
+							}
+						: t,
+				),
+			};
 			break;
 		}
 		case "agent_settled": {
@@ -82,25 +105,91 @@ function applyEvent(messages: ChatMessage[], ev: PiEvent): ChatMessage[] {
 	return next;
 }
 
-/** 从 get_entries 结果提取可渲染的消息历史（宽松解析）。 */
-function entriesToMessages(entries: unknown[]): ChatMessage[] {
+/** 识别用户输入里的技能块 / 斜杠命令，拆出展示文本与徽标。 */
+function parseUserInput(text: string): { text: string; badge?: MessageBadge } {
+	// 历史记录里技能已展开为 <skill name="..." location="..."> 块，尾部可能跟调用参数
+	const skillBlock = text.match(/^<skill name="([^"]+)" location="[^"]*">\n[\s\S]*?\n<\/skill>(?:\n\n([\s\S]+))?$/);
+	if (skillBlock) {
+		return { text: skillBlock[2]?.trim() ?? "", badge: { kind: "skill", name: skillBlock[1] } };
+	}
+	// 本地刚发送、尚未展开的 /skill:name 输入
+	const skillCommand = text.match(/^\/skill:([^\s]+)\s*([\s\S]*)$/);
+	if (skillCommand) {
+		return { text: skillCommand[2].trim(), badge: { kind: "skill", name: skillCommand[1] } };
+	}
+	// 其它斜杠命令，如 /compact、/help
+	const command = text.match(/^\/([^\s]+)\s*([\s\S]*)$/);
+	if (command) {
+		return { text: command[2].trim(), badge: { kind: "command", name: command[1] } };
+	}
+	return { text };
+}
+
+/** 从 get_entries 结果提取可渲染的消息历史（包含工具调用与结果）。 */
+function entriesToMessages(entries: unknown): ChatMessage[] {
 	const out: ChatMessage[] = [];
+	// 防御：结构异常时返回空列表，不让异常进入渲染阶段
+	if (!Array.isArray(entries)) return out;
+	/** toolCallId → 卡片引用，用于后置的 toolResult 回填 */
+	const toolsById = new Map<string, ToolCallItem>();
+
 	for (const e of entries) {
-		const entry = e as { type?: string; message?: { role?: string; content?: unknown } };
+		const entry = e as {
+			type?: string;
+			message?: {
+				role?: string;
+				content?: unknown;
+				toolCallId?: string;
+				toolName?: string;
+				isError?: boolean;
+				durationMs?: number;
+			};
+		};
 		if (entry.type !== "message" || !entry.message) continue;
 		const { role, content } = entry.message;
+
+		// 工具结果作为独立消息记录，按 toolCallId 回填到对应卡片
+		if (role === "toolResult") {
+			const tool = toolsById.get(String(entry.message.toolCallId ?? ""));
+			if (tool) {
+				tool.result = content;
+				tool.isError = Boolean(entry.message.isError);
+				tool.done = true;
+				if (typeof entry.message.durationMs === "number") tool.durationMs = entry.message.durationMs;
+			}
+			continue;
+		}
+
 		if (role !== "user" && role !== "assistant") continue;
 		let text = "";
-		if (typeof content === "string") text = content;
-		else if (Array.isArray(content)) {
+		const toolCalls: ToolCallItem[] = [];
+		if (typeof content === "string") {
+			text = content;
+		} else if (Array.isArray(content)) {
 			for (const c of content) {
-				const block = c as { type?: string; text?: string };
+				const block = c as { type?: string; text?: string; id?: string; name?: string; arguments?: unknown };
 				if (block?.type === "text" && block.text) text += block.text;
+				// assistant 内容块里的工具调用：type = "toolCall"
+				if (block?.type === "toolCall" && block.id) {
+					const tool: ToolCallItem = {
+						id: block.id,
+						toolName: block.name ?? "tool",
+						args: block.arguments,
+						done: false,
+					};
+					toolCalls.push(tool);
+					toolsById.set(tool.id, tool);
+				}
 			}
 		}
-		if (!text.trim()) continue;
-		out.push({ id: nextId(), role, text, toolCalls: [], streaming: false });
+		if (!text.trim() && toolCalls.length === 0) continue;
+		// 用户消息可能带 /skill 或 /命令，拆出徽标后只展示正文
+		const parsed = role === "user" ? parseUserInput(text) : { text };
+		out.push({ id: nextId(), role, text: parsed.text, toolCalls, badge: parsed.badge, streaming: false });
 	}
+
+	// 没有结果记录的调用（会话中断等）也标记为已结束，避免一直显示执行中
+	for (const tool of toolsById.values()) tool.done = true;
 	return out;
 }
 
@@ -251,8 +340,10 @@ export default function App() {
 		try {
 			await rpc.switchSession(activeProject, sessionPath);
 			setActiveSessionPath(sessionPath);
-			const entries = await rpc.getEntries(activeProject);
-			patchMessages(activeProject, () => entriesToMessages(entries));
+			const { entries } = await rpc.getEntries(activeProject);
+			// 先在更新函数外解析，避免解析异常发生在 React 渲染阶段导致整页白屏
+			const parsedMessages = entriesToMessages(entries);
+			patchMessages(activeProject, () => parsedMessages);
 			refreshState(activeProject);
 		} catch (e) {
 			patchMessages(activeProject, (msgs) => [
@@ -273,9 +364,10 @@ export default function App() {
 
 	const handleSend = async (text: string, mode: "prompt" | "followUp") => {
 		if (!activeProject) return;
+		const parsed = parseUserInput(text);
 		patchMessages(activeProject, (msgs) => [
 			...msgs,
-			{ id: nextId(), role: "user", text, toolCalls: [], streaming: false },
+			{ id: nextId(), role: "user", text: parsed.text, toolCalls: [], badge: parsed.badge, streaming: false },
 		]);
 		try {
 			if (mode === "followUp" || state?.isStreaming) {

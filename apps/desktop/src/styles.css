@@ -292,6 +292,32 @@ body,
 	word-break: break-word;
 }
 
+/* 用户消息里的技能 / 命令徽标 */
+.msg-badge {
+	display: block;
+	width: fit-content;
+	font-family: Consolas, monospace;
+	font-size: 10px;
+	letter-spacing: 1px;
+	padding: 1px 7px;
+	margin-bottom: 5px;
+	border: 1px solid;
+	border-radius: 2px;
+}
+
+.msg-badge.skill {
+	color: var(--accent-magenta);
+	border-color: var(--accent-magenta);
+	box-shadow: var(--glow-magenta);
+	text-shadow: 0 0 6px rgba(255, 46, 166, 0.6);
+}
+
+.msg-badge.command {
+	color: var(--accent);
+	border-color: var(--accent-dim);
+	text-shadow: 0 0 6px rgba(0, 229, 255, 0.6);
+}
+
 .message-assistant .markdown {
 	line-height: 1.7;
 }
@@ -377,8 +403,42 @@ body,
 	color: var(--fg-dim);
 }
 
+/* 执行中的动作闪烁，便于一眼看到 agent 正在做什么 */
+.tool-call-header .tool-status.running {
+	color: var(--accent);
+	animation: pulse 1.2s infinite;
+}
+
 .tool-call-header .tool-status.error {
 	color: var(--error);
+}
+
+.tool-call-header .tool-caret {
+	color: var(--fg-dim);
+	width: 10px;
+}
+
+/* 标题行内联摘要：命令 / 路径 / 匹配模式 */
+.tool-call-header .tool-args {
+	flex: 1;
+	min-width: 0;
+	color: var(--fg-dim);
+	font-family: Consolas, monospace;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.tool-call-header .tool-duration {
+	color: var(--fg-dim);
+	font-family: Consolas, monospace;
+}
+
+.tool-call-body .tool-section-label {
+	color: var(--accent);
+	font-size: 11px;
+	letter-spacing: 1px;
+	margin: 6px 0 2px;
 }
 
 .tool-call-body {

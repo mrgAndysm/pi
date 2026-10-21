@@ -57,8 +57,13 @@ export function listSessions(project: string): Promise<SessionFileInfo[]> {
 	return invoke("list_sessions", { project });
 }
 
-/** 历史条目（宽松结构，前端提取文本）。 */
-export function getEntries(project: string): Promise<unknown[]> {
+/** get_entries 的返回结构：条目数组 + 当前叶子 id（RPC 返回的是对象，不是数组）。 */
+export interface EntriesResult {
+	entries: unknown[];
+	leafId: string | null;
+}
+
+export function getEntries(project: string): Promise<EntriesResult> {
 	return invoke("get_entries", { project });
 }
 

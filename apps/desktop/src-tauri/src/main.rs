@@ -1,4 +1,6 @@
 //! Pi Desktop —— Tauri 入口。
+//! release 构建使用 windows 子系统，避免启动时弹出控制台窗口。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
 mod rpc;
