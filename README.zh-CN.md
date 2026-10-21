@@ -69,19 +69,63 @@ Nix 构建是离线的，因此内置模型数据来自 `nix/model-catalog.json`
 npm run update:model-catalog-pin
 ```
 
+## 目录结构
+
+本仓库是一个 npm workspace monorepo，按"库 / 应用 / 构建工具"三层组织：
+
+```
+pi/
+├── apps/                         # 最终交付形态（应用）
+│   └── desktop/                   # Tauri 桌面客户端（React + highlight.js）
+│       ├── src/                  # 前端：聊天视图、会话列表、Tauri RPC 封装
+│       └── src-tauri/            # Rust 侧：sidecar 进程管理、commands/rpc 桥接
+├── packages/                     # 可独立发布的库
+│   ├── coding-agent/             # CLI 入口（bin: pi）+ 交互式模式 + RPC 模式
+│   ├── agent/                    # 智能体运行时（工具调用 / 状态管理）
+│   ├── durable/                  # 会话 / 任务 / 文档持久化运行时
+│   ├── ai/                       # 多服务商 LLM API（OpenAI / Anthropic / Google …）
+│   ├── tui/                      # 终端 UI（差分渲染 / markdown 组件）
+│   ├── mcp/                      # Model Context Protocol 客户端 + OAuth 传输
+│   ├── env/                      # SSH / 本地环境管理（daemon + PTY）
+│   ├── chord/                    # 类型化宿主运行时（插件热重载 / RPC / 复制状态）
+│   ├── codemode/                 # 隔离执行 VM（支持 WebAssembly / Cloudflare Workers）
+│   ├── telemetry/                # 遥测契约与适配器（厂商中立）
+│   └── evals/                    # 评估 harness（smoke / plan / 真实任务）
+├── scripts/                      # 构建 / 检查 / 发布工具
+├── nix/                          # Nix 离线构建（含锁定的模型目录）
+├── .pi/                          # 仓库自身的开发技能 / 提示词 / 扩展
+└── AGENTS.md / CONTRIBUTING.md   # 贡献规则（同时适用于人和智能体）
+```
+
+**分层原则**
+
+- `packages/*` 每个都是独立的 npm 包，可以在 monorepo 外单独消费；它们之间的依赖必须通过 `package.json` 显式声明。
+- `apps/*` 是交付形态，依赖 `packages/*` 暴露的 API。目前只有桌面端，CLI 入口在 `packages/coding-agent`。
+- `scripts/*` 不发布，只供仓库开发使用。
+- `.pi/` 不是源码的一部分，是 Pi 用来辅助自己开发这个仓库的技能与提示词集合。
+
+**数据流**
+
+用户任务 → coding-agent（CLI/RPC 模式） → agent（工具调用） → durable（会话） → ai（LLM API）→ mcp（可选的外部上下文）。桌面端通过 Tauri sidecar 启动 `pi` 的 RPC 模式进程，再用 JSON-RPC 事件流呈现状态。
+
 ## 包说明
 
 本 monorepo 包含 Pi CLI 及其支撑库。
 
-| 包 | 说明 |
-|---------|-------------|
-| **[@earendil-works/chord](packages/chord)** | 类型化宿主运行时：支持热重载插件、契约、复制状态以及基于 JSON 链路的 RPC |
-| **[@earendil-works/pi-telemetry](packages/telemetry)** | 厂商中立的遥测契约、参考适配器、一致性测试和类型化 schema |
-| **[@earendil-works/pi-ai](packages/ai)** | 统一的多服务商 LLM API（OpenAI、Anthropic、Google 等） |
-| **[@earendil-works/pi-durable](packages/durable)** | 持久化的会话、任务和文档运行时 |
-| **[@earendil-works/pi-agent-core](packages/agent)** | 带工具调用和状态管理的智能体运行时 |
-| **[@earendil-works/pi-coding-agent](packages/coding-agent)** | 交互式编程智能体 CLI |
-| **[@earendil-works/pi-tui](packages/tui)** | 带差分渲染的终端 UI 库 |
+| 包 | 类型 | 说明 |
+|---------|------|-------------|
+| **@earendil-works/pi-coding-agent** | CLI | `pi` 命令行，交互式模式 / RPC 模式入口 |
+| **@earendil-works/pi-agent-core** | 库 | 带工具调用和状态管理的智能体运行时 |
+| **@earendil-works/pi-durable** | 库 | 持久化的会话、任务和文档运行时 |
+| **@earendil-works/pi-ai** | 库 | 统一的多服务商 LLM API（OpenAI、Anthropic、Google 等） |
+| **@earendil-works/pi-tui** | 库 | 终端 UI 库（差分渲染、markdown、输入组件） |
+| **@earendil-works/pi-mcp** | 库 | Model Context Protocol 客户端（stdio / HTTP / OAuth） |
+| **@earendil-works/pi-env** | 库 + daemon | SSH / 本地环境管理（Rust daemon + PTY） |
+| **@earendil-works/chord** | 库 | 类型化宿主运行时：热重载插件、契约、复制状态、JSON RPC |
+| **@earendil-works/pi-codemode** | 库 | 隔离执行 VM（支持 WebAssembly / Cloudflare Workers） |
+| **@earendil-works/pi-telemetry** | 库 | 厂商中立的遥测契约、参考适配器、类型化 schema |
+| **@earendil-works/pi-evals** | 库 | 评估 harness（smoke / plan / 真实任务） |
+| **@earendil-works/pi-desktop** | 应用 | React + Tauri 桌面客户端（未发布 npm） |
 
 Slack/聊天自动化与工作流见 [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat)。
 

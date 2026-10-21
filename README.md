@@ -69,19 +69,63 @@ Nix builds are offline, so the bundled model data comes from a pi.dev model cata
 npm run update:model-catalog-pin
 ```
 
+## Repository Layout
+
+This repo is an npm workspace monorepo organized along three layers: libraries, deliverables, and tooling.
+
+```
+pi/
+├── apps/                         # Deliverables (end-user products)
+│   └── desktop/                   # Tauri desktop client (React + highlight.js)
+│       ├── src/                  # Frontend: chat view, session list, Tauri RPC bridge
+│       └── src-tauri/            # Rust side: sidecar process mgmt, commands/rpc bridge
+├── packages/                     # Independently publishable libraries
+│   ├── coding-agent/             # CLI entry (bin: pi) + interactive mode + RPC mode
+│   ├── agent/                    # Agent runtime (tool calling / state management)
+│   ├── durable/                  # Persistent session / task / document runtime
+│   ├── ai/                       # Multi-provider LLM API (OpenAI / Anthropic / Google …)
+│   ├── tui/                      # Terminal UI (differential rendering / markdown components)
+│   ├── mcp/                      # Model Context Protocol client + OAuth transports
+│   ├── env/                      # SSH / local environment management (daemon + PTY)
+│   ├── chord/                    # Typed host runtime (hot-reloadable plugins / RPC / replicated state)
+│   ├── codemode/                 # Isolated execution VM (WebAssembly / Cloudflare Workers)
+│   ├── telemetry/                # Vendor-neutral telemetry contracts and adapters
+│   └── evals/                    # Evaluation harness (smoke / plan / real tasks)
+├── scripts/                      # Build / check / release tooling
+├── nix/                          # Nix offline build (with pinned model catalog)
+├── .pi/                          # Pi's own development skills / prompts / extensions for this repo
+└── AGENTS.md / CONTRIBUTING.md   # Contribution rules (for both humans and agents)
+```
+
+**Layering rules**
+
+- Each `packages/*` directory is its own npm package that can be consumed outside the monorepo; cross-package dependencies must be declared in `package.json`.
+- `apps/*` are deliverables that depend on APIs exported from `packages/*`. The CLI entry lives in `packages/coding-agent`, not in `apps/`.
+- `scripts/*` are repo-only tools, not published.
+- `.pi/` is not source code — it is a set of skills and prompts Pi uses to help develop this repo.
+
+**Data flow**
+
+User task → coding-agent (CLI / RPC mode) → agent (tool calling) → durable (sessions) → ai (LLM API) → mcp (optional external context). The desktop app launches a sidecar `pi` process in RPC mode and renders state from its JSON-RPC event stream.
+
 ## Packages
 
 This monorepo contains the Pi CLI and its supporting libraries.
 
-| Package | Description |
-|---------|-------------|
-| **[@earendil-works/chord](packages/chord)** | Typed host runtime for hot-reloadable plugins, contracts, replicated state, and RPC over JSON links |
-| **[@earendil-works/pi-telemetry](packages/telemetry)** | Vendor-neutral telemetry contracts, reference adapter, conformance tests, and typed schemas |
-| **[@earendil-works/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@earendil-works/pi-durable](packages/durable)** | Durable conversation, task, and document runtime |
-| **[@earendil-works/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@earendil-works/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI |
-| **[@earendil-works/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
+| Package | Type | Description |
+|---------|------|-------------|
+| **@earendil-works/pi-coding-agent** | CLI | `pi` command-line, interactive mode / RPC mode entry |
+| **@earendil-works/pi-agent-core** | Library | Agent runtime with tool calling and state management |
+| **@earendil-works/pi-durable** | Library | Durable conversation, task, and document runtime |
+| **@earendil-works/pi-ai** | Library | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
+| **@earendil-works/pi-tui** | Library | Terminal UI library (differential rendering, markdown, input components) |
+| **@earendil-works/pi-mcp** | Library | Model Context Protocol client (stdio / HTTP / OAuth) |
+| **@earendil-works/pi-env** | Library + daemon | SSH / local environment management (Rust daemon + PTY) |
+| **@earendil-works/chord** | Library | Typed host runtime for hot-reloadable plugins, contracts, replicated state, and RPC over JSON links |
+| **@earendil-works/pi-codemode** | Library | Isolated execution VM (WebAssembly / Cloudflare Workers) |
+| **@earendil-works/pi-telemetry** | Library | Vendor-neutral telemetry contracts, reference adapter, conformance tests, and typed schemas |
+| **@earendil-works/pi-evals** | Library | Evaluation harness (smoke / plan / real tasks) |
+| **@earendil-works/pi-desktop** | App | React + Tauri desktop client (not published to npm) |
 
 For Slack/chat automation and workflows see [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat).
 

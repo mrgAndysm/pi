@@ -14,12 +14,15 @@ packages/ai/src/providers/.model-generation-*/
 
 # Environment
 .env
+.env.local
+.env.*.local
 
 # Editor files
 .vscode/
 .zed/
 .idea/
 .claude/
+.trae/
 *.swp
 *.swo
 *~
@@ -46,6 +49,20 @@ plans/
 .pi/settings.json
 collect.sh
 packages/agent/docs/extensions/pi-server-artifact/index.md
-.exe
+
+# Desktop app (Tauri)
+apps/desktop/dist/
 apps/desktop/src-tauri/target/
-apps/desktop/src-tauri/binaries/pi-x86_64-pc-windows-msvc.exe
+apps/desktop/src-tauri/binaries/
+apps/desktop/src-tauri/gen/
+
+# Platform artifacts
+*.exe
+*.pdb
+*.ilk
+*.obj
+*.exp
+.lib
+Thumbs.db
+Desktop.ini
+._*
